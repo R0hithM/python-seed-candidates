@@ -45,6 +45,7 @@ STATUS_SUCCESS = "SUCCESS"
 STATUS_FAILED = "FAILED"
 STATUS_SKIPPED = "SKIPPED"
 TERMINAL_STATUSES = {STATUS_SUCCESS, STATUS_FAILED, STATUS_SKIPPED}
+SUCCESS_HTTP_STATUSES = {200, 201}
 
 
 def load_config() -> tuple[str, str]:
@@ -269,8 +270,8 @@ def main() -> int:
             http_status, payload, body_or_error = call_api(api_url, token, drive_link)
             elapsed = time.perf_counter() - started
 
-            ids = extract_ids(payload) if http_status == 200 else None
-            if http_status == 201 and ids:
+            ids = extract_ids(payload) if http_status in SUCCESS_HTTP_STATUSES else None
+            if http_status in SUCCESS_HTTP_STATUSES and ids:
                 document_id, candidate_id, import_id = ids
                 write_result(
                     ws,
@@ -297,9 +298,9 @@ def main() -> int:
             else:
                 error_text = truncate_error(body_or_error or "empty response")
 
-            if http_status == 201 and ids is None:
+            if http_status in SUCCESS_HTTP_STATUSES and ids is None:
                 error_text = truncate_error(
-                    f"200 response missing documentId/candidateId/importId: {error_text}"
+                    f"{http_status} response missing documentId/candidateId/importId: {error_text}"
                 )
 
             write_result(

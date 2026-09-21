@@ -7,6 +7,7 @@ import argparse
 import os
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -31,6 +32,9 @@ COL_IMPORT_ID = "importId"
 COL_SEED_STATUS = "seed_status"
 COL_SEED_HTTP_STATUS = "seed_http_status"
 COL_SEED_ERROR = "seed_error"
+COL_SEED_STARTED_AT = "seed_started_at"
+COL_SEED_FINISHED_AT = "seed_finished_at"
+COL_SEED_DURATION_SECONDS = "seed_duration_seconds"
 
 RESULT_COLUMNS = (
     COL_DOCUMENT_ID,
@@ -39,6 +43,9 @@ RESULT_COLUMNS = (
     COL_SEED_STATUS,
     COL_SEED_HTTP_STATUS,
     COL_SEED_ERROR,
+    COL_SEED_STARTED_AT,
+    COL_SEED_FINISHED_AT,
+    COL_SEED_DURATION_SECONDS,
 )
 
 STATUS_SUCCESS = "SUCCESS"
@@ -103,6 +110,10 @@ def is_google_drive_link(url: str) -> bool:
     return host == "drive.google.com" or host.endswith(".google.com") and "drive" in host
 
 
+def iso_now() -> str:
+    return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
 def write_result(
     ws: Worksheet,
     row: int,
@@ -114,6 +125,9 @@ def write_result(
     status: str,
     http_status: int | str = "",
     error: str = "",
+    started_at: str = "",
+    finished_at: str = "",
+    duration_seconds: float | str = "",
 ) -> None:
     ws.cell(row=row, column=headers[COL_DOCUMENT_ID], value=document_id)
     ws.cell(row=row, column=headers[COL_CANDIDATE_ID], value=candidate_id)
@@ -121,6 +135,9 @@ def write_result(
     ws.cell(row=row, column=headers[COL_SEED_STATUS], value=status)
     ws.cell(row=row, column=headers[COL_SEED_HTTP_STATUS], value=http_status)
     ws.cell(row=row, column=headers[COL_SEED_ERROR], value=error)
+    ws.cell(row=row, column=headers[COL_SEED_STARTED_AT], value=started_at)
+    ws.cell(row=row, column=headers[COL_SEED_FINISHED_AT], value=finished_at)
+    ws.cell(row=row, column=headers[COL_SEED_DURATION_SECONDS], value=duration_seconds)
 
 
 def truncate_error(text: str) -> str:
@@ -265,10 +282,12 @@ def main() -> int:
                 print(f"[{row}/{max_row}] SKIPPED {name}: {reason}")
                 continue
 
+            started_at = iso_now()
             started = time.perf_counter()
             print(f"[{row}/{max_row}] POST {name} ...", flush=True)
             http_status, payload, body_or_error = call_api(api_url, token, drive_link)
-            elapsed = time.perf_counter() - started
+            elapsed = round(time.perf_counter() - started, 2)
+            finished_at = iso_now()
 
             ids = extract_ids(payload) if http_status in SUCCESS_HTTP_STATUSES else None
             if http_status in SUCCESS_HTTP_STATUSES and ids:
@@ -282,6 +301,9 @@ def main() -> int:
                     import_id=import_id,
                     status=STATUS_SUCCESS,
                     http_status=http_status,
+                    started_at=started_at,
+                    finished_at=finished_at,
+                    duration_seconds=elapsed,
                 )
                 dirty = True
                 save()
@@ -310,6 +332,9 @@ def main() -> int:
                 status=STATUS_FAILED,
                 http_status=http_status,
                 error=error_text,
+                started_at=started_at,
+                finished_at=finished_at,
+                duration_seconds=elapsed,
             )
             dirty = True
             save()

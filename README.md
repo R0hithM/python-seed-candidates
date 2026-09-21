@@ -98,6 +98,9 @@ Existing columns are left unchanged. These columns are added on first run (or re
 | `seed_status` | `SUCCESS`, `FAILED`, or `SKIPPED` |
 | `seed_http_status` | HTTP status from the API (empty on network/timeout errors) |
 | `seed_error` | Error text for failed or skipped rows |
+| `seed_started_at` | Local time the API POST was sent (ISO 8601 with timezone offset) |
+| `seed_finished_at` | Local time the response or error returned |
+| `seed_duration_seconds` | Elapsed seconds for the API call (empty on skipped rows) |
 
 ### Status rules
 

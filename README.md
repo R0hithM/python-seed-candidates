@@ -120,3 +120,68 @@ At ~5 seconds per API call, 10,000 new rows is on the order of 14 hours. Typical
 4. Inspect `seed_status` / `seed_error` in Excel for failures.
 
 The workbook is saved after every processed row so a crash does not lose completed work.
+
+## SMTP email sender
+
+`send_emails.py` reads **Email** and **Template Name** from an Excel workbook, loads a matching `.txt` file from `email_template/`, and sends a plain-text email over SMTP. Results are written back into the same row. The run is sequential and **resume-safe**, same as the seeder.
+
+### Extra setup
+
+Keep the ATS token in `.env` if you still use the seeder. For email sending, also set:
+
+```text
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=you@example.com
+SMTP_PASSWORD=your_smtp_password
+SMTP_FROM=you@example.com
+```
+
+`SMTP_FROM` is optional; if omitted, the script uses `SMTP_USER`. Port **465** uses SSL. Other ports use STARTTLS (typical for **587**).
+
+Templates live in `email_template/`. The first line must be the subject; the rest is the body:
+
+```text
+Subject: Welcome to the process
+
+Thank you for applying. We will be in touch.
+```
+
+A row with Template Name `welcome` uses `email_template/welcome.txt`. If the name already ends with `.txt`, it is used as-is.
+
+### How to run emails
+
+Keep the Excel file **closed** while the script runs.
+
+```text
+python send_emails.py --file Emails.xlsx --limit 3
+python send_emails.py --file Emails.xlsx
+python send_emails.py --file Emails.xlsx --retry-failed
+```
+
+`--file` defaults to `Emails.xlsx`. `--templates` defaults to `email_template`. Stop with Ctrl+C; the last completed row is saved.
+
+### Email Excel columns
+
+Required:
+
+| Column | Meaning |
+| --- | --- |
+| `Email` | Recipient address |
+| `Template Name` | File stem under `email_template/` (for example `welcome`) |
+
+Written by the script (added if missing):
+
+| Column | Meaning |
+| --- | --- |
+| `email_status` | `SUCCESS`, `FAILED`, or `SKIPPED` |
+| `email_error` | Reason for failed or skipped rows (empty on success) |
+| `email_sent_at` | Local time the send finished or the failure was recorded (ISO 8601 with timezone offset) |
+
+### Email status rules
+
+- **SUCCESS** — SMTP accepted the message. Will not be sent again.
+- **FAILED** — invalid email, template file missing, first line is not `Subject:`, read error, or SMTP error. Example: `template 'welcome' not found in email_template folder`. Will not be sent again unless you pass `--retry-failed`.
+- **SKIPPED** — empty `Email` or empty `Template Name`. Will not be sent again.
+
+A later run only sends rows with an empty `email_status` (plus `FAILED` when `--retry-failed` is set).

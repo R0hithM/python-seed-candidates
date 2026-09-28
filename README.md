@@ -7,7 +7,7 @@ The API parses the resume (this can take about 4–7 seconds per candidate). The
 ## Requirements
 
 - Python 3.10+
-- An Excel file with a `Resume Link` column (this repo includes `ProfilesData.xlsx`)
+- An Excel file with a `Resume Link` column (this repo includes `ProfilesData.xlsx`). Optional columns: `Job Type`, `Current CTC`, `Expected CTC`, `Current Location`, and `Preferred Location` or `Preferred Locations`.
 - A valid ATS Bearer token
 
 ## Setup
@@ -68,15 +68,31 @@ python seed_candidates.py --file ProfilesData.xlsx --retry-failed
 
 ## What the script sends
 
-Each pending row with a Google Drive URL in **Resume Link** is posted as:
+Each pending row with a Google Drive URL in **Resume Link** is posted with that link plus any of the optional Excel fields that are present:
+
+| Excel header | JSON field |
+| --- | --- |
+| Resume Link | `driveLink` (required) |
+| Job Type | `employmentType` |
+| Current CTC | `currentCtc` |
+| Expected CTC | `expectedCtc` |
+| Current Location | `currentLocation` |
+| Preferred Location or Preferred Locations | `preferredLocations` (JSON array; a single city is still sent as one-element array) |
+
+Empty optional cells are omitted from the body. Missing Job Type / CTC / location does not skip the row.
 
 ```json
 {
-  "driveLink": "https://drive.google.com/file/d/.../view"
+  "driveLink": "https://drive.google.com/file/d/.../view",
+  "employmentType": "Full-time",
+  "currentCtc": "12 LPA",
+  "expectedCtc": "18 LPA",
+  "currentLocation": "Bengaluru",
+  "preferredLocations": ["Hyderabad"]
 }
 ```
 
-Other Excel columns (name, skills, CTC, and so on) are not sent. The API is expected to parse the resume and store the candidate.
+Other Excel columns (name, skills, and so on) are not sent. The API is expected to parse the resume and store the candidate.
 
 A row is treated as **success** when the API returns HTTP **200 or 201** and JSON with non-empty:
 

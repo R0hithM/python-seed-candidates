@@ -25,6 +25,11 @@ ERROR_BODY_MAX_LEN = 500
 
 RESUME_LINK_HEADER = "Resume Link"
 CANDIDATE_NAME_HEADER = "Candidate Name"
+JOB_TYPE_HEADER = "Job Type"
+CURRENT_CTC_HEADER = "Current CTC"
+EXPECTED_CTC_HEADER = "Expected CTC"
+CURRENT_LOCATION_HEADER = "Current Location"
+PREFERRED_LOCATION_HEADERS = ("Preferred Locations", "Preferred Location")
 
 COL_DOCUMENT_ID = "documentId"
 COL_CANDIDATE_ID = "candidateId"
@@ -97,6 +102,47 @@ def cell_str(ws: Worksheet, row: int, col: int | None) -> str:
     return str(value).strip()
 
 
+def parse_preferred_locations(raw: str) -> list[str]:
+    if not raw:
+        return []
+    return [part.strip() for part in raw.split(",") if part.strip()]
+
+
+def preferred_location_col(headers: dict[str, int]) -> int | None:
+    for name in PREFERRED_LOCATION_HEADERS:
+        col = headers.get(name)
+        if col is not None:
+            return col
+    return None
+
+
+def build_payload(
+    ws: Worksheet,
+    row: int,
+    drive_link: str,
+    extra_cols: dict[str, int | None],
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {"driveLink": drive_link}
+    employment_type = cell_str(ws, row, extra_cols.get("employmentType"))
+    if employment_type:
+        payload["employmentType"] = employment_type
+    current_ctc = cell_str(ws, row, extra_cols.get("currentCtc"))
+    if current_ctc:
+        payload["currentCtc"] = current_ctc
+    expected_ctc = cell_str(ws, row, extra_cols.get("expectedCtc"))
+    if expected_ctc:
+        payload["expectedCtc"] = expected_ctc
+    current_location = cell_str(ws, row, extra_cols.get("currentLocation"))
+    if current_location:
+        payload["currentLocation"] = current_location
+    preferred = parse_preferred_locations(
+        cell_str(ws, row, extra_cols.get("preferredLocations"))
+    )
+    if preferred:
+        payload["preferredLocations"] = preferred
+    return payload
+
+
 def is_google_drive_link(url: str) -> bool:
     if not url:
         return False
@@ -158,7 +204,7 @@ def extract_ids(payload: Any) -> tuple[str, str, str] | None:
     return None
 
 
-def call_api(api_url: str, token: str, drive_link: str) -> tuple[int | str, Any, str | None]:
+def call_api(api_url: str, token: str, payload: dict[str, Any]) -> tuple[int | str, Any, str | None]:
     """Return (http_status, json_or_none, error_text_or_none)."""
     try:
         response = requests.post(
@@ -168,7 +214,7 @@ def call_api(api_url: str, token: str, drive_link: str) -> tuple[int | str, Any,
                 "Authorization": f"Bearer {token}",
                 "Content-Type": "application/json",
             },
-            json={"driveLink": drive_link},
+            json=payload,
             timeout=REQUEST_TIMEOUT_SECONDS,
         )
     except requests.Timeout:
@@ -235,6 +281,13 @@ def main() -> int:
         print(f"Column '{RESUME_LINK_HEADER}' not found in {path}", file=sys.stderr)
         return 1
     name_col = headers.get(CANDIDATE_NAME_HEADER)
+    extra_cols: dict[str, int | None] = {
+        "employmentType": headers.get(JOB_TYPE_HEADER),
+        "currentCtc": headers.get(CURRENT_CTC_HEADER),
+        "expectedCtc": headers.get(EXPECTED_CTC_HEADER),
+        "currentLocation": headers.get(CURRENT_LOCATION_HEADER),
+        "preferredLocations": preferred_location_col(headers),
+    }
 
     processed = 0
     success = 0
@@ -282,10 +335,11 @@ def main() -> int:
                 print(f"[{row}/{max_row}] SKIPPED {name}: {reason}")
                 continue
 
+            request_body = build_payload(ws, row, drive_link, extra_cols)
             started_at = iso_now()
             started = time.perf_counter()
             print(f"[{row}/{max_row}] POST {name} ...", flush=True)
-            http_status, payload, body_or_error = call_api(api_url, token, drive_link)
+            http_status, payload, body_or_error = call_api(api_url, token, request_body)
             elapsed = round(time.perf_counter() - started, 2)
             finished_at = iso_now()
 

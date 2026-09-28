@@ -7,7 +7,7 @@ import argparse
 import os
 import sys
 import time
-from datetime import datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 import requests
 from dotenv import load_dotenv
 from openpyxl import load_workbook
+from openpyxl.utils.datetime import from_excel
 from openpyxl.worksheet.worksheet import Worksheet
 
 DEFAULT_API_URL = (
@@ -30,6 +31,34 @@ CURRENT_CTC_HEADER = "Current CTC"
 EXPECTED_CTC_HEADER = "Expected CTC"
 CURRENT_LOCATION_HEADER = "Current Location"
 PREFERRED_LOCATION_HEADERS = ("Preferred Locations", "Preferred Location")
+DATE_HEADER = "Date"
+DATE_STRING_FORMATS = ("%d/%m/%Y", "%d-%b-%Y")
+ENGLISH_MONTHS = {
+    "jan": 1,
+    "january": 1,
+    "feb": 2,
+    "february": 2,
+    "mar": 3,
+    "march": 3,
+    "apr": 4,
+    "april": 4,
+    "may": 5,
+    "jun": 6,
+    "june": 6,
+    "jul": 7,
+    "july": 7,
+    "aug": 8,
+    "august": 8,
+    "sep": 9,
+    "sept": 9,
+    "september": 9,
+    "oct": 10,
+    "october": 10,
+    "nov": 11,
+    "november": 11,
+    "dec": 12,
+    "december": 12,
+}
 
 COL_DOCUMENT_ID = "documentId"
 COL_CANDIDATE_ID = "candidateId"
@@ -108,6 +137,58 @@ def parse_preferred_locations(raw: str) -> list[str]:
     return [part.strip() for part in raw.split(",") if part.strip()]
 
 
+def _unix_utc_midnight(value: date) -> int:
+    return int(datetime(value.year, value.month, value.day, tzinfo=timezone.utc).timestamp())
+
+
+def _parse_date_string(text: str) -> int | None:
+    text = text.strip().lstrip("'").strip()
+    if not text:
+        return None
+    for fmt in DATE_STRING_FORMATS:
+        try:
+            parsed = datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+        return _unix_utc_midnight(parsed.date())
+    parts = text.replace("/", "-").split("-")
+    if len(parts) != 3:
+        return None
+    day_s, month_s, year_s = parts
+    month = ENGLISH_MONTHS.get(month_s.lower())
+    if month is None:
+        return None
+    try:
+        parsed_date = date(int(year_s), month, int(day_s))
+    except ValueError:
+        return None
+    return _unix_utc_midnight(parsed_date)
+
+
+def parse_created_date(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, datetime):
+        dt = value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+        return int(dt.timestamp())
+    if isinstance(value, date):
+        return _unix_utc_midnight(value)
+    if isinstance(value, (int, float)):
+        if not 1 <= float(value) < 100000:
+            return None
+        try:
+            parsed = from_excel(value)
+        except (ValueError, OverflowError, OSError):
+            return None
+        if isinstance(parsed, datetime):
+            dt = parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+            return int(dt.timestamp())
+        if isinstance(parsed, date):
+            return _unix_utc_midnight(parsed)
+        return None
+    return _parse_date_string(str(value))
+
+
 def preferred_location_col(headers: dict[str, int]) -> int | None:
     for name in PREFERRED_LOCATION_HEADERS:
         col = headers.get(name)
@@ -140,6 +221,11 @@ def build_payload(
     )
     if preferred:
         payload["preferredLocations"] = preferred
+    date_col = extra_cols.get("createdDate")
+    if date_col is not None:
+        created = parse_created_date(ws.cell(row=row, column=date_col).value)
+        if created is not None:
+            payload["createdDate"] = created
     return payload
 
 
@@ -287,6 +373,7 @@ def main() -> int:
         "expectedCtc": headers.get(EXPECTED_CTC_HEADER),
         "currentLocation": headers.get(CURRENT_LOCATION_HEADER),
         "preferredLocations": preferred_location_col(headers),
+        "createdDate": headers.get(DATE_HEADER),
     }
 
     processed = 0

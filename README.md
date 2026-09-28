@@ -7,7 +7,7 @@ The API parses the resume (this can take about 4–7 seconds per candidate). The
 ## Requirements
 
 - Python 3.10+
-- An Excel file with a `Resume Link` column (this repo includes `ProfilesData.xlsx`). Optional columns: `Job Type`, `Current CTC`, `Expected CTC`, `Current Location`, and `Preferred Location` or `Preferred Locations`.
+- An Excel file with a `Resume Link` column (this repo includes `ProfilesData.xlsx`). Optional columns: `Job Type`, `Current CTC`, `Expected CTC`, `Current Location`, `Preferred Location` or `Preferred Locations`, and `Date`.
 - A valid ATS Bearer token
 
 ## Setup
@@ -78,8 +78,9 @@ Each pending row with a Google Drive URL in **Resume Link** is posted with that 
 | Expected CTC | `expectedCtc` |
 | Current Location | `currentLocation` |
 | Preferred Location or Preferred Locations | `preferredLocations` (JSON array; a single city is still sent as one-element array) |
+| Date | `createdDate` (Unix timestamp in seconds; omitted if empty or unparseable) |
 
-Empty optional cells are omitted from the body. Missing Job Type / CTC / location does not skip the row.
+Empty optional cells are omitted from the body. Missing Job Type / CTC / location / Date does not skip the row. `Date` values such as `19/09/2023`, `20-Sep-2023`, or a real Excel date become UTC midnight that day.
 
 ```json
 {
@@ -88,7 +89,8 @@ Empty optional cells are omitted from the body. Missing Job Type / CTC / locatio
   "currentCtc": "12 LPA",
   "expectedCtc": "18 LPA",
   "currentLocation": "Bengaluru",
-  "preferredLocations": ["Hyderabad"]
+  "preferredLocations": ["Hyderabad"],
+  "createdDate": 1695081600
 }
 ```
 
